@@ -1,0 +1,90 @@
+<project name="xmt" default="dist" basedir=".">
+	<property name="build.version" value="1.0.0"/>
+	
+	<target name="compile">
+		<mkdir dir="build/classes"/>
+        <javac srcdir="src" destdir="build/classes">
+        	<classpath>
+        		<fileset dir="lib" excludes="junit*.jar"/>
+        	</classpath>
+        </javac>
+	</target>
+	
+	<target name="compile.test">
+		<mkdir dir="build/test-classes"/>
+		<javac srcdir="test" destdir="build/test-classes">
+        	<classpath>
+        		<fileset dir="lib" includes="*.jar"/>
+        		<pathelement location="build/classes"/>
+        	</classpath>
+		</javac>
+		<copy todir="build/test-classes">
+			<fileset dir="test" excludes="**/*.java"/>
+		</copy>
+	</target>
+
+    <target name="test" depends="compile, compile.test">
+		<mkdir dir="build/junit-reports"/>
+		<junit printsummary="yes">
+			<formatter type="xml"/>
+			<batchtest todir="build/junit-reports">
+				<fileset dir="test">
+					<include name="**/*Test.java"/>
+				</fileset>
+			</batchtest>
+        	<classpath>
+        		<fileset dir="lib" includes="*.jar"/>
+        		<pathelement location="build/classes"/>
+        		<pathelement location="build/test-classes"/>
+        	</classpath>
+		</junit>
+	</target>
+	
+	<target name="stage" depends="test">
+		<mkdir dir="stage/javadoc"/>
+        <javadoc destdir="stage/javadoc" source="1.5" useexternalfile="true" author="true" 
+        		version="true" use="true" windowtitle="Bean Migration Toolkit API">
+            <doctitle><![CDATA[<h1>Bean Migration Toolkit</h1>]]></doctitle>
+            <bottom><![CDATA[<i>Copyright &#169; 2009-2010 PMEase Inc. All Rights Reserved.</i>]]></bottom>
+        	<fileset dir="src" includes="**/*.java"/>
+        	<classpath>
+        		<fileset dir="lib" excludes="junit*.jar"/>
+        	</classpath>
+        </javadoc>	
+		<copy todir="stage">
+			<fileset dir="." includes="*.txt"/>
+		</copy>
+		<mkdir dir="stage/lib"/>
+		<copy todir="stage/lib">
+			<fileset dir="lib" excludes="junit*.jar"/>
+		</copy>
+        <jar destfile="stage/lib/xmt-${build.version}.jar">
+        	<fileset dir="build/classes"/>
+        </jar>
+	</target>
+	
+	<target name="dist" depends="stage">
+		<mkdir dir="dist"/>
+		<zip destfile="dist/xmt-${build.version}.zip">
+			<zipfileset dir="stage" prefix="xmt-${build.version}"/>			
+		</zip>
+	</target>
+	
+	<target name="dist.all" depends="dist">
+		<mkdir dir="dist/source"/>
+		<copy todir="dist/source">
+			<fileset dir="." includes="*.txt, *.xml, src/**, test/**, lib/**"/>
+		</copy>
+		<zip destfile="dist/xmt-${build.version}-src.zip">
+			<zipfileset dir="dist/source" prefix="xmt-${build.version}-src"/>			
+		</zip>
+		<delete dir="dist/source"/>
+	</target>
+	
+	<target name="clean">
+		<delete dir="build"/>
+		<delete dir="stage"/>
+		<delete dir="dist"/>
+	</target>
+
+</project>
