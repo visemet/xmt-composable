@@ -1,5 +1,6 @@
 package com.pmease.commons.xmt;
 
+import com.pmease.commons.xmt.annotations.XMTComposable;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -31,9 +32,13 @@ import org.dom4j.io.XMLWriter;
 import org.xml.sax.EntityResolver;
 
 import com.thoughtworks.xstream.XStream;
+import com.thoughtworks.xstream.converters.reflection.ReflectionProvider;
 import com.thoughtworks.xstream.core.util.HierarchicalStreams;
 import com.thoughtworks.xstream.io.xml.Dom4JReader;
 import com.thoughtworks.xstream.io.xml.Dom4JWriter;
+import com.thoughtworks.xstream.mapper.Mapper;
+import java.util.ArrayDeque;
+import java.util.Deque;
 
 /**
  * This class is the bridge between bean and XML. It implements dom4j
@@ -450,6 +455,46 @@ public final class VersionedDocument implements Document, Serializable {
         if (bean != null) {
             versionedDom.setVersion(MigrationHelper.getVersion(bean.getClass()));
         }
+
+        Mapper mapper = xstream.getMapper();
+        ReflectionProvider reflectionProvider = xstream.getReflectionProvider();
+
+        Deque<Element> breadthFirstDeque = new ArrayDeque<>();
+
+        breadthFirstDeque.offerFirst(versionedDom.getRootElement());
+        while (!breadthFirstDeque.isEmpty()) {
+            Element elem = breadthFirstDeque.pollFirst();
+
+            Iterator iter = elem.elementIterator();
+            while (iter.hasNext()) {
+                breadthFirstDeque.addLast((Element) iter.next());
+            }
+
+            Element parent = elem.getParent();
+
+            if (parent != null) {
+                Class parentClass = mapper.realClass(parent.getName());
+                String fieldName = mapper.realMember(parentClass, elem.getName());
+
+                try {
+                    Object parentBean = parentClass.newInstance();
+                    Class fieldType = reflectionProvider.getFieldType(
+                            parentBean, fieldName, parentClass);
+
+                    if (fieldType.isAnnotationPresent(XMTComposable.class)) {
+                        int index = parent.indexOf(elem);
+
+                        VersionedDocument doc = new VersionedDocument(elem);
+                        doc.setVersion(MigrationHelper.getVersion(fieldType));
+
+                        parent.elements().add(index, elem);
+                    }
+                } catch (IllegalAccessException | InstantiationException ex) {
+
+                }
+            }
+        }
+
         return versionedDom;
     }
 
@@ -513,6 +558,56 @@ public final class VersionedDocument implements Document, Serializable {
         } else {
             getRootElement().setName(xstream.getMapper().serializedClass(beanClass));
         }
+
+        Mapper mapper = xstream.getMapper();
+        ReflectionProvider reflectionProvider = xstream.getReflectionProvider();
+
+        Deque<Element> breadthFirstDeque = new ArrayDeque<>();
+        Deque<Element> bottomUpDeque = new ArrayDeque<>();
+
+        breadthFirstDeque.offerFirst(getRootElement());
+        while (!breadthFirstDeque.isEmpty()) {
+            Element elem = breadthFirstDeque.pollFirst();
+
+            Iterator iter = elem.elementIterator();
+            while (iter.hasNext()) {
+                breadthFirstDeque.addLast((Element) iter.next());
+            }
+
+            bottomUpDeque.offerFirst(elem);
+        }
+
+        while (!bottomUpDeque.isEmpty()) {
+            Element elem = bottomUpDeque.pollFirst();
+            Element parent = elem.getParent();
+
+            if (parent != null) {
+                Class parentClass = mapper.realClass(parent.getName());
+                String fieldName = mapper.realMember(parentClass, elem.getName());
+
+                try {
+                    Object parentBean = parentClass.newInstance();
+                    Class fieldType = reflectionProvider.getFieldType(
+                            parentBean, fieldName, parentClass);
+
+                    int index = parent.indexOf(elem);
+
+                    VersionedDocument doc = new VersionedDocument(elem);
+
+                    String version = doc.getVersion();
+                    if (version != null) {
+                        if (MigrationHelper.migrate(version, fieldType, doc)) {
+                            doc.setVersion(MigrationHelper.getVersion(fieldType));
+                        }
+                    }
+
+                    parent.elements().add(index, elem);
+                } catch (IllegalAccessException | InstantiationException ex) {
+
+                }
+            }
+        }
+
         if (getVersion() != null) {
             if (MigrationHelper.migrate(getVersion(), beanClass, this)) {
                 setVersion(MigrationHelper.getVersion(beanClass));
@@ -545,5 +640,17 @@ public final class VersionedDocument implements Document, Serializable {
      */
     public void setVersion(String version) {
         getRootElement().addAttribute("version", version);
+    }
+
+    private static class ParentChild {
+
+        private final Element parent;
+
+        private final Element child;
+
+        public ParentChild(Element parent, Element child) {
+            this.parent = parent;
+            this.child = child;
+        }
     }
 }
