@@ -36,6 +36,7 @@ import com.thoughtworks.xstream.converters.reflection.ReflectionProvider;
 import com.thoughtworks.xstream.core.util.HierarchicalStreams;
 import com.thoughtworks.xstream.io.xml.Dom4JReader;
 import com.thoughtworks.xstream.io.xml.Dom4JWriter;
+import com.thoughtworks.xstream.mapper.CannotResolveClassException;
 import com.thoughtworks.xstream.mapper.Mapper;
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -473,24 +474,69 @@ public final class VersionedDocument implements Document, Serializable {
             Element parent = elem.getParent();
 
             if (parent != null) {
-                Class parentClass = mapper.realClass(parent.getName());
-                String fieldName = mapper.realMember(parentClass, elem.getName());
+                boolean isResolved = true;
+
+                Class parentClass = null; // unused value
 
                 try {
-                    Object parentBean = parentClass.newInstance();
-                    Class fieldType = reflectionProvider.getFieldType(
-                            parentBean, fieldName, parentClass);
+                    parentClass = mapper.realClass(parent.getName());
+                } catch (CannotResolveClassException ex) {
+                    isResolved = false;
+                }
 
-                    if (fieldType.isAnnotationPresent(XMTComposable.class)) {
-                        int index = parent.indexOf(elem);
+                Object parentBean = null;
 
-                        VersionedDocument doc = new VersionedDocument(elem);
-                        doc.setVersion(MigrationHelper.getVersion(fieldType));
+                if (!isResolved) {
+                    Element grandParent = parent.getParent();
+                    Class grandParentClass = mapper.realClass(grandParent.getName());
 
-                        parent.elements().add(index, elem);
+                    try {
+                        Object grandParentBean = grandParentClass.newInstance();
+                        parentClass = reflectionProvider.getFieldType(
+                                grandParentBean, parent.getName(), grandParentClass);
+
+                        isResolved = true;
+
+                        parentBean = parentClass.newInstance();
+                    } catch (IllegalAccessException | InstantiationException ex) {
+                        isResolved = false;
                     }
-                } catch (IllegalAccessException | InstantiationException ex) {
+                }
 
+                if (parentBean == null) {
+                    isResolved = false;
+                }
+
+                Class fieldType;
+
+                if (isResolved) {
+                    String fieldName = mapper.realMember(parentClass, elem.getName());
+
+                    if (parentBean == null) {
+                        try {
+                            parentBean = parentClass.newInstance();
+                        } catch (IllegalAccessException | InstantiationException ex) {
+
+                        }
+                    }
+
+                    fieldType = reflectionProvider.getFieldType(
+                        parentBean, fieldName, parentClass);
+                } else {
+                    try {
+                        fieldType = mapper.realClass(elem.getName());
+                    } catch (CannotResolveClassException ex) {
+                        continue;
+                    }
+                }
+
+                if (fieldType.isAnnotationPresent(XMTComposable.class)) {
+                    int index = parent.indexOf(elem);
+
+                    VersionedDocument doc = new VersionedDocument(elem);
+                    doc.setVersion(MigrationHelper.getVersion(fieldType));
+
+                    parent.elements().add(index, elem);
                 }
             }
         }
