@@ -474,37 +474,52 @@ public final class VersionedDocument implements Document, Serializable {
             Element parent = elem.getParent();
 
             if (parent != null) {
-                boolean isResolved = true;
+                // Indicates whether the class type of the parent tag is
+                // resolved
+                boolean isResolved;
 
                 Class parentClass = null; // unused value
+                Object parentBean = null; // unused value
 
                 try {
+                    // Attempt to get the class type of the parent tag
                     parentClass = mapper.realClass(parent.getName());
+
+                    isResolved = true;
+
+                    // Attempt to create an instance of the parent type
+                    parentBean = parentClass.newInstance();
                 } catch (CannotResolveClassException ex) {
                     isResolved = false;
+                } catch (IllegalAccessException | InstantiationException ex) {
+                    continue;
                 }
-
-                Object parentBean = null;
 
                 if (!isResolved) {
                     Element grandParent = parent.getParent();
+
+                    // Attempts to get the class type of the grandparent tag
+                    // should always succeed
                     Class grandParentClass = mapper.realClass(grandParent.getName());
 
                     try {
+                        // Attempt to create an instance of the grandparent type
                         Object grandParentBean = grandParentClass.newInstance();
+
+                        String fieldName = mapper.realMember(
+                                grandParentClass, parent.getName());
+
+                        // Determine the class type of the parent tag
                         parentClass = reflectionProvider.getFieldType(
-                                grandParentBean, parent.getName(), grandParentClass);
+                                grandParentBean, fieldName, grandParentClass);
 
                         isResolved = true;
 
+                        // Attempt to create an instance of the parent type
                         parentBean = parentClass.newInstance();
                     } catch (IllegalAccessException | InstantiationException ex) {
                         isResolved = false;
                     }
-                }
-
-                if (parentBean == null) {
-                    isResolved = false;
                 }
 
                 Class fieldType;
@@ -512,18 +527,12 @@ public final class VersionedDocument implements Document, Serializable {
                 if (isResolved) {
                     String fieldName = mapper.realMember(parentClass, elem.getName());
 
-                    if (parentBean == null) {
-                        try {
-                            parentBean = parentClass.newInstance();
-                        } catch (IllegalAccessException | InstantiationException ex) {
-
-                        }
-                    }
-
+                    // Determine the class type of the element tag
                     fieldType = reflectionProvider.getFieldType(
-                        parentBean, fieldName, parentClass);
+                            parentBean, fieldName, parentClass);
                 } else {
                     try {
+                        // Attempt to get the class type of the element tag
                         fieldType = mapper.realClass(elem.getName());
                     } catch (CannotResolveClassException ex) {
                         continue;
