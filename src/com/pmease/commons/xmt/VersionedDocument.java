@@ -472,83 +472,17 @@ public final class VersionedDocument implements Document, Serializable {
             }
 
             Element parent = elem.getParent();
+            Class fieldType = getFieldType(elem, parent, mapper, reflectionProvider);
 
-            if (parent != null) {
-                // Indicates whether the class type of the parent tag is
-                // resolved
-                boolean isResolved;
+            if (fieldType != null
+                    && fieldType.isAnnotationPresent(XMTComposable.class)) {
 
-                Class parentClass = null; // unused value
+                int index = parent.indexOf(elem);
 
-                try {
-                    // Attempt to get the class type of the parent tag
-                    parentClass = mapper.realClass(parent.getName());
+                VersionedDocument doc = new VersionedDocument(elem);
+                doc.setVersion(MigrationHelper.getVersion(fieldType));
 
-                    isResolved = true;
-                } catch (CannotResolveClassException ex) {
-                    isResolved = false;
-                }
-
-                Object parentBean = null; // unused value
-
-                if (!isResolved) {
-                    Element grandParent = parent.getParent();
-
-                    // Attempts to get the class type of the grandparent tag
-                    // should always succeed
-                    Class grandParentClass = mapper.realClass(grandParent.getName());
-
-                    try {
-                        // Attempt to create an instance of the grandparent type
-                        Object grandParentBean = grandParentClass.newInstance();
-
-                        String fieldName = mapper.realMember(
-                                grandParentClass, parent.getName());
-
-                        // Determine the class type of the parent tag
-                        parentClass = reflectionProvider.getFieldType(
-                                grandParentBean, fieldName, grandParentClass);
-
-                        isResolved = true;
-                    } catch (IllegalAccessException | InstantiationException ex) {
-                        isResolved = false;
-                    }
-                }
-
-                if (isResolved) {
-                    try {
-                        // Attempt to create an instance of the parent type
-                        parentBean = parentClass.newInstance();
-                    } catch (IllegalAccessException | InstantiationException ex) {
-                        isResolved = false;
-                    }
-                }
-
-                Class fieldType;
-
-                if (isResolved) {
-                    String fieldName = mapper.realMember(parentClass, elem.getName());
-
-                    // Determine the class type of the element tag
-                    fieldType = reflectionProvider.getFieldType(
-                            parentBean, fieldName, parentClass);
-                } else {
-                    try {
-                        // Attempt to get the class type of the element tag
-                        fieldType = mapper.realClass(elem.getName());
-                    } catch (CannotResolveClassException ex) {
-                        continue;
-                    }
-                }
-
-                if (fieldType.isAnnotationPresent(XMTComposable.class)) {
-                    int index = parent.indexOf(elem);
-
-                    VersionedDocument doc = new VersionedDocument(elem);
-                    doc.setVersion(MigrationHelper.getVersion(fieldType));
-
-                    parent.elements().add(index, elem);
-                }
+                parent.elements().add(index, elem);
             }
         }
 
@@ -638,81 +572,18 @@ public final class VersionedDocument implements Document, Serializable {
             Element elem = bottomUpDeque.pollFirst();
             Element parent = elem.getParent();
 
-            if (parent != null) {
-                // Indicates whether the class type of the parent tag is
-                // resolved
-                boolean isResolved;
+            Class fieldType = getFieldType(elem, parent, mapper, reflectionProvider);
 
-                Class parentClass = null; // unused value
-                Object parentBean = null; // unused value
-
-                try {
-                    // Attempt to get the class type of the parent tag
-                    parentClass = mapper.realClass(parent.getName());
-
-                    isResolved = true;
-
-                    // Attempt to create an instance of the parent type
-                    parentBean = parentClass.newInstance();
-                } catch (CannotResolveClassException ex) {
-                    isResolved = false;
-                } catch (IllegalAccessException | InstantiationException ex) {
-                    continue;
-                }
-
-                if (!isResolved) {
-                    Element grandParent = parent.getParent();
-
-                    // Attempts to get the class type of the grandparent tag
-                    // should always succeed
-                    Class grandParentClass = mapper.realClass(grandParent.getName());
-
-                    try {
-                        // Attempt to create an instance of the grandparent type
-                        Object grandParentBean = grandParentClass.newInstance();
-
-                        String fieldName = mapper.realMember(
-                                grandParentClass, parent.getName());
-
-                        // Determine the class type of the parent tag
-                        parentClass = reflectionProvider.getFieldType(
-                                grandParentBean, fieldName, grandParentClass);
-
-                        isResolved = true;
-
-                        // Attempt to create an instance of the parent type
-                        parentBean = parentClass.newInstance();
-                    } catch (IllegalAccessException | InstantiationException ex) {
-                        isResolved = false;
-                    }
-                }
-
-                Class fieldType;
-
-                if (isResolved) {
-                    String fieldName = mapper.realMember(parentClass, elem.getName());
-
-                    // Determine the class type of the element tag
-                    fieldType = reflectionProvider.getFieldType(
-                            parentBean, fieldName, parentClass);
-                } else {
-                    try {
-                        // Attempt to get the class type of the element tag
-                        fieldType = mapper.realClass(elem.getName());
-                    } catch (CannotResolveClassException ex) {
-                        continue;
-                    }
-                }
-
+            if (fieldType != null) {
                 int index = parent.indexOf(elem);
 
                 VersionedDocument doc = new VersionedDocument(elem);
 
                 String version = doc.getVersion();
-                if (version != null) {
-                    if (MigrationHelper.migrate(version, fieldType, doc)) {
-                        doc.setVersion(MigrationHelper.getVersion(fieldType));
-                    }
+                if (version != null
+                        && MigrationHelper.migrate(version, fieldType, doc)) {
+
+                    doc.setVersion(MigrationHelper.getVersion(fieldType));
                 }
 
                 parent.elements().add(index, elem);
@@ -735,7 +606,9 @@ public final class VersionedDocument implements Document, Serializable {
         }
     }
 
-    private static Class getFieldType(Element elem, Element parent, Mapper mapper, ReflectionProvider reflectionProvider) {
+    private static Class getFieldType(Element elem, Element parent,
+            Mapper mapper, ReflectionProvider reflectionProvider) {
+
         if (parent == null) {
             return null;
         }
